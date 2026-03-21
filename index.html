@@ -68,8 +68,8 @@
 </head>
 <body>
 
-    <h2>Batch PNG to JPG Converter</h2>
-    <p>Select multiple PNG files. They will be converted to JPG at maximum quality matching the exact resolution, then automatically downloaded as a ZIP file.</p>
+    <h2>Batch PNG to JPG Converter (100% Quality)</h2>
+    <p>Select multiple PNG files. They will be converted to JPG at 100% quality (0% compression loss) matching the exact original resolution, then automatically downloaded as a ZIP file.</p>
 
     <div class="drop-zone" id="dropZone">
         <p>📁 Click to select PNG files or drag & drop them here</p>
@@ -177,17 +177,21 @@
                 
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
-                    canvas.width = img.width;   // maintain exact resolution
-                    canvas.height = img.height; // maintain exact resolution
+                    // Use naturalWidth and naturalHeight to get the exact original resolution
+                    // regardless of any CSS or browser scaling.
+                    canvas.width = img.naturalWidth;
+                    canvas.height = img.naturalHeight;
                     const ctx = canvas.getContext('2d');
                     
                     // Fill background with white because PNG might have transparent pixels
-                    // JPEG does not support transparency, so it defaults to black or undefined without this
+                    // JPEG does not support transparency.
                     ctx.fillStyle = "#FFFFFF";
                     ctx.fillRect(0, 0, canvas.width, canvas.height);
-                    ctx.drawImage(img, 0, 0);
                     
-                    // Convert canvas to blob (JPEG format, 1.0 quality for max quality)
+                    // Draw image at its original resolution with 1:1 pixel mapping
+                    ctx.drawImage(img, 0, 0, img.naturalWidth, img.naturalHeight);
+                    
+                    // Convert canvas to blob (JPEG format, 1.0 quality for maximum quality)
                     canvas.toBlob(blob => {
                         resolve(blob);
                         URL.revokeObjectURL(url);
