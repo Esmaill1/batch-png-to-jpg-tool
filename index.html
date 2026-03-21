@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Batch PNG to JPG Converter</title>
+    <!-- Include JSZip from CDN to handle creating the ZIP file -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        body { 
+            font-family: system-ui, -apple-system, sans-serif; 
+            max-width: 600px; 
+            margin: 40px auto; 
+            padding: 20px; 
+            line-height: 1.6;
+            color: #333;
+        }
+        .drop-zone { 
+            border: 2px dashed #007bff; 
+            padding: 40px; 
+            text-align: center; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            transition: background 0.2s; 
+            background: #fafafa;
+        }
+        .drop-zone:hover, .drop-zone.dragover { 
+            background: #eef5ff; 
+        }
+        .drop-zone p { 
+            margin: 0; 
+            color: #555; 
+            font-size: 16px; 
+        }
+        #fileInput { 
+            display: none; 
+        }
+        button { 
+            background: #007bff; 
+            color: white; 
+            border: none; 
+            padding: 12px 20px; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-size: 16px; 
+            margin-top: 20px; 
+            width: 100%; 
+            transition: background 0.2s; 
+            font-weight: bold;
+        }
+        button:hover { 
+            background: #0056b3; 
+        }
+        button:disabled { 
+            background: #ccc; 
+            cursor: not-allowed; 
+        }
+        #status { 
+            margin-top: 20px; 
+            font-weight: bold; 
+        }
+        .progress { 
+            color: #555; 
+            font-size: 14px; 
+            margin-top: 10px; 
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Batch PNG to JPG Converter</h2>
+    <p>Select multiple PNG files. They will be converted to JPG at maximum quality matching the exact resolution, then automatically downloaded as a ZIP file.</p>
+
+    <div class="drop-zone" id="dropZone">
+        <p>📁 Click to select PNG files or drag & drop them here</p>
+        <input type="file" id="fileInput" multiple accept="image/png">
+    </div>
+
+    <div id="status"></div>
+    <div id="progress" class="progress"></div>
+
+    <button id="convertBtn" style="display: none;">Convert to JPG & Download ZIP</button>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const statusEl = document.getElementById('status');
+        const progressEl = document.getElementById('progress');
+        const convertBtn = document.getElementById('convertBtn');
+        let selectedFiles = [];
+
+        // Setup drop zone interactions
+        dropZone.addEventListener('click', () => fileInput.click());
+        
+        dropZone.addEventListener('dragover', (e) => { 
+            e.preventDefault(); 
+            dropZone.classList.add('dragover');
+        });
+        
+        dropZone.addEventListener('dragleave', () => { 
+            dropZone.classList.remove('dragover');
+        });
+        
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+        function handleFiles(files) {
+            // Filter only PNG files
+            selectedFiles = Array.from(files).filter(file => file.type === 'image/png' || file.name.toLowerCase().endsWith('.png'));
+            
+            if (selectedFiles.length === 0) {
+                statusEl.textContent = "No valid PNG files selected.";
+                convertBtn.style.display = 'none';
+                return;
+            }
+            
+            statusEl.textContent = `${selectedFiles.length} PNG file(s) ready for conversion.`;
+            convertBtn.style.display = 'block';
+            progressEl.textContent = "";
+            convertBtn.textContent = `Convert ${selectedFiles.length} File(s) to JPG & Download ZIP`;
+        }
+
+        convertBtn.addEventListener('click', async () => {
+            if (selectedFiles.length === 0) return;
+            
+            convertBtn.disabled = true;
+            statusEl.textContent = "Converting images... Please don't close the page.";
+            
+            const zip = new JSZip();
+            
+            for (let i = 0; i < selectedFiles.length; i++) {
+                const file = selectedFiles[i];
+                progressEl.textContent = `Processing (${i + 1}/${selectedFiles.length}): ${file.name}`;
+                try {
+                    const blob = await convertToJpg(file);
+                    // Extract name without extension and append .jpg
+                    const originalName = file.name.replace(/\.[^/.]+$/, "");
+                    zip.file(`${originalName}.jpg`, blob);
+                } catch (e) {
+                    console.error(`Failed converting ${file.name}`, e);
+                }
+            }
+
+            statusEl.textContent = "Packaging into ZIP file...";
+            progressEl.textContent = "Almost done, compiling the zip...";
+            
+            // JPEGs are already compressed, soSTORE is much faster than DEFLATE
+            zip.generateAsync({ type: "blob", compression: "STORE" })
+                .then(function(content) {
+                    const url = URL.createObjectURL(content);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = "converted_photos.zip";
+                    document.body.appendChild(a);
+                    a.click();
+                    
+                    setTimeout(() => {
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    }, 100);
+                    
+                    statusEl.textContent = "✅ Done! Your ZIP file is downloading.";
+                    progressEl.textContent = "";
+                    convertBtn.disabled = false;
+                });
+        });
+
+        function convertToJpg(file) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                const url = URL.createObjectURL(file);
+                
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = img.width;   // maintain exact resolution
+                    canvas.height = img.height; // maintain exact resolution
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Fill background with white because PNG might have transparent pixels
+                    // JPEG does not support transparency, so it defaults to black or undefined without this
+                    ctx.fillStyle = "#FFFFFF";
+                    ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0);
+                    
+                    // Convert canvas to blob (JPEG format, 1.0 quality for max quality)
+                    canvas.toBlob(blob => {
+                        resolve(blob);
+                        URL.revokeObjectURL(url);
+                    }, 'image/jpeg', 1.0);
+                };
+                
+                img.onerror = reject;
+                img.src = url;
+            });
+        }
+    </script>
+</body>
+</html>
